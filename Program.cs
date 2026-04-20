@@ -7,9 +7,14 @@ public static class MyEnumerable
         this IEnumerable<TSource> source,
         Func<TSource, TResult> selector)
     {
-        foreach (var item in source)
+        using (var enumerator = source.GetEnumerator())
         {
-            yield return selector(item);
+            {
+                while (enumerator.MoveNext())
+                {
+                    yield return selector(enumerator.Current);
+                }
+            }
         }
     }
 
@@ -17,11 +22,15 @@ public static class MyEnumerable
         this IEnumerable<TSource> source,
         Func<TSource, bool> predicate)
     {
-        foreach (var item in source)
+        using (var enumerator = source.GetEnumerator())
         {
-            if (predicate(item))
+            while (enumerator.MoveNext())
             {
-                yield return item;
+                var item = enumerator.Current;
+                if (predicate(item))
+                {
+                    yield return item;
+                }
             }
         }
     }
@@ -30,39 +39,50 @@ public static class MyEnumerable
         this IEnumerable<TSource> source,
         Func<TSource, bool> predicate)
     {
-        foreach (var item in source)
+        using (var enumerator = source.GetEnumerator())
         {
-            if (predicate(item))
+            while (enumerator.MoveNext())
             {
-                return true;
+                if (predicate(enumerator.Current))
+                {
+                    return true;
+                }
             }
         }
-        return false;
+        return false; //no match
     }
 
     public static bool MyAll<TSource>(
         this IEnumerable<TSource> source,
         Func<TSource, bool> predicate)
     {
-        foreach (var item in source)
+        using (var enumerator = source.GetEnumerator())
         {
-            if (!predicate(item))
+            while (enumerator.MoveNext())
             {
-                return false;
+                if (!predicate(enumerator.Current))
+                {
+                    return false; //fail
+                }
             }
         }
-        return true;
+        return true; //all match
     }
+
 
     public static TSource MyFirstOrDefault<TSource>(
         this IEnumerable<TSource> source,
         Func<TSource, bool> predicate)
     {
-        foreach (var item in source)
+        using (var enumerator = source.GetEnumerator())
         {
-            if (predicate(item))
+            while (enumerator.MoveNext())
             {
-                return item; //first match
+                var item = enumerator.Current;
+                if (predicate(item))
+                {
+                    return item; //first match
+                }
             }
         }
         return default;
@@ -76,51 +96,54 @@ public static class MyEnumerable
         list.Sort((x, y) => Comparer<TKey>.Default.Compare(
             keySelector(x), keySelector(y)));
 
-        foreach (var item in list)
+        using (var enumerator = list.GetEnumerator())
         {
-            yield return item;
+            while (enumerator.MoveNext())
+            {
+                yield return enumerator.Current;
+            }
         }
     }
-}
 
-class Program
-{
-    static void Main()
+    class Program
     {
-        List<int> list = new List<int>() { 1, 10, 7, 4, 9, 6, 3, 8, 5, 2 };
-
-        var doubledList = list.MySelect(x => x * 2);
-        foreach (var item in doubledList)
+        static void Main()
         {
-            Console.WriteLine(item);
-        }
+            List<int> list = new List<int>() { 1, 10, 7, 4, 9, 6, 3, 8, 5, 2 };
 
-        var moreThan5 = list.MyWhere(x => x > 5);
-        foreach (var item in moreThan5)
-        {
-            Console.WriteLine(item);
-        }
+            var doubledList = list.MySelect(x => x * 2);
+            foreach (var item in doubledList)
+            {
+                Console.WriteLine(item);
+            }
 
-        bool hasEven = list.MyAny(x => x % 2 == 0);
-        if (hasEven == true)
-        {
-            Console.WriteLine("Even numbers in the list");
-        }
+            var moreThan5 = list.MyWhere(x => x > 5);
+            foreach (var item in moreThan5)
+            {
+                Console.WriteLine(item);
+            }
 
-        var allGreaterThan0 = list.MyAll(x => x > 0);
-        if (allGreaterThan0 == true)
-        {
-            Console.WriteLine("Greater than 5");
-        }
+            bool hasEven = list.MyAny(x => x % 2 == 0);
+            if (hasEven == true)
+            {
+                Console.WriteLine("Even numbers in the list");
+            }
 
-        var firstGreaterThan5 = list.MyFirstOrDefault(x => x > 5);
-        Console.WriteLine(firstGreaterThan5);
+            var allGreaterThan0 = list.MyAll(x => x > 0);
+            if (allGreaterThan0 == true)
+            {
+                Console.WriteLine("Greater than 5");
+            }
 
-        var ordered = list.MyOrderBy(x => x);
-        foreach (var item in ordered)
-        {
-            Console.WriteLine(item);
+            var firstGreaterThan5 = list.MyFirstOrDefault(x => x > 5);
+            Console.WriteLine(firstGreaterThan5);
 
+            var ordered = list.MyOrderBy(x => x);
+            foreach (var item in ordered)
+            {
+                Console.WriteLine(item);
+
+            }
         }
     }
 }
