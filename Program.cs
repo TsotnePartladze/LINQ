@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 
 public static class MyEnumerable
 {
@@ -7,32 +9,14 @@ public static class MyEnumerable
         this IEnumerable<TSource> source,
         Func<TSource, TResult> selector)
     {
-        using (var enumerator = source.GetEnumerator())
-        {
-            {
-                while (enumerator.MoveNext())
-                {
-                    yield return selector(enumerator.Current);
-                }
-            }
-        }
+        return new MySelectIterator<TSource, TResult>(source, selector);
     }
 
     public static IEnumerable<TSource> MyWhere<TSource>(
         this IEnumerable<TSource> source,
         Func<TSource, bool> predicate)
     {
-        using (var enumerator = source.GetEnumerator())
-        {
-            while (enumerator.MoveNext())
-            {
-                var item = enumerator.Current;
-                if (predicate(item))
-                {
-                    yield return item;
-                }
-            }
-        }
+        return new MyWhereIterator<TSource>(source, predicate);
     }
 
     public static bool MyAny<TSource>(
@@ -92,18 +76,206 @@ public static class MyEnumerable
     this IEnumerable<TSource> source,
     Func<TSource, TKey> keySelector)
     {
-        var list = source.ToList();
-        list.Sort((x, y) => Comparer<TKey>.Default.Compare(
-            keySelector(x), keySelector(y)));
+        return new MyOrderByIterator<TSource, TKey>(source, keySelector);
+    }
 
-        using (var enumerator = list.GetEnumerator())
+    private class MySelectIterator<TSource, TResult>
+      : IEnumerable<TResult>, IEnumerator<TResult>, IEnumerator
+    {
+        private int _bookmark;
+        private TResult _current;
+        private IEnumerable<TSource> _source;
+        private Func<TSource, TResult> _selector;
+        private IEnumerator<TSource> _enumerator;
+
+        public MySelectIterator(IEnumerable<TSource> source, Func<TSource, TResult> selector)
         {
-            while (enumerator.MoveNext())
+
+            _bookmark = 0;
+            _source = source;
+            _selector = selector;          
+        }
+
+        public TResult Current => _current;
+        object IEnumerator.Current => _current;
+
+        public bool MoveNext()
+        {
+            switch (_bookmark)
             {
-                yield return enumerator.Current;
+                case 0: //first call
+                    _enumerator = _source.GetEnumerator();
+                    _bookmark = 1;
+                    goto case 1;
+
+                case 1: //loop
+                    if (_enumerator.MoveNext())
+                    {
+                        _current = _selector(_enumerator.Current);
+                        _bookmark = 1;
+                        return true;
+                    }
+
+                    goto case -1;
+
+                case -1: //stop
+                    _bookmark = -1;
+                    _enumerator?.Dispose();
+                    return false;
+
+                default: return false;
+
+
+            }
+         }
+
+        public void Dispose()
+        {
+            if (_bookmark != -1)
+            {
+                _bookmark = -1;
+                _enumerator?.Dispose();
             }
         }
+
+        public void Reset() => throw new NotSupportedException();
+
+        //reiteration
+        public IEnumerator<TResult> GetEnumerator() => this;
+        IEnumerator IEnumerable.GetEnumerator() => this;
     }
+
+    private class MyWhereIterator<TSource>
+    : IEnumerable<TSource>, IEnumerator<TSource>, IEnumerator
+    {
+        private int _bookmark;
+        private TSource _current;
+        private IEnumerable<TSource> _source;
+        private Func<TSource, bool> _predicate;
+        private IEnumerator<TSource> _enumerator;
+
+        public MyWhereIterator(IEnumerable<TSource> source, Func<TSource, bool> predicate)
+        {
+            _bookmark = 0;
+            _source = source;
+            _predicate = predicate;
+        }
+
+        public TSource Current => _current;
+        object IEnumerator.Current => _current;
+
+        public bool MoveNext()
+        {
+            switch (_bookmark)
+            {
+                case 0:
+                    _enumerator = _source.GetEnumerator();
+                    _bookmark = 1;
+                    goto case 1;
+
+                case 1:
+                    while (_enumerator.MoveNext())
+                    {
+                        var item = _enumerator.Current;
+                        if (_predicate(item))   // only if predicate pass
+                        {
+                            _current = item;    //no selector
+                            _bookmark = 1;
+                            return true;
+                        }
+                        // predicate fail = loop continues, no return
+                    }
+                    goto case -1;
+
+                case -1:
+                    _enumerator?.Dispose();
+                    return false;
+
+                default:
+                    return false;
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_bookmark != -1)
+            {
+                _bookmark = -1;
+                _enumerator?.Dispose();
+            }
+        }
+
+        public void Reset() => throw new NotSupportedException();
+
+        public IEnumerator<TSource> GetEnumerator() => this;
+        IEnumerator IEnumerable.GetEnumerator() => this;
+    }
+
+    private class MyOrderByIterator<TSource, TKey>
+    : IEnumerable<TSource>, IEnumerator<TSource>, IEnumerator
+    {
+        private int _bookmark;
+        private TSource _current;
+        private IEnumerable<TSource> _source;
+        private Func<TSource, TKey> _keySelector;
+        private IEnumerator<TSource> _enumerator;
+
+        public MyOrderByIterator(IEnumerable<TSource> source, Func<TSource, TKey> keySelector)
+        {
+            _bookmark = 0;
+            _source = source;
+            _keySelector = keySelector;
+        }
+
+        public TSource Current => _current;
+        object IEnumerator.Current => _current;
+
+        public bool MoveNext()
+        {
+            switch (_bookmark)
+            {
+                case 0: //first call, sort
+                    var list = _source.ToList();
+                    list.Sort((x, y) => Comparer<TKey>.Default.Compare(
+                        _keySelector(x), _keySelector(y)));
+                    _enumerator = list.GetEnumerator();
+                    _bookmark = 1;
+                    goto case 1;
+
+                case 1:
+                    if (_enumerator.MoveNext())
+                    {
+                        _current = _enumerator.Current;
+                        _bookmark = 1;
+                        return true;
+                    }
+                    goto case -1;
+
+                case -1:
+                    _enumerator?.Dispose();
+                    return false;
+
+                default:
+                    return false;
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_bookmark != -1)
+            {
+                _bookmark = -1;
+                _enumerator?.Dispose();
+            }
+        }
+
+        public void Reset() => throw new NotSupportedException();
+
+        public IEnumerator<TSource> GetEnumerator() => this;
+        IEnumerator IEnumerable.GetEnumerator() => this;
+ 
+    }  
+}
 
     class Program
     {
@@ -146,4 +318,3 @@ public static class MyEnumerable
             }
         }
     }
-}
